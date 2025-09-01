@@ -19,7 +19,7 @@ It is designed to be used directly or as a backend for higher-level integrations
 ## 📦 Installation
 
 ```bash
-pip install renac-ble
+pip install "git+https://github.com/voluzi/renac-ble.git@main"
 ```
 
 ---
