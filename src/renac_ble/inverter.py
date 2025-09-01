@@ -1,8 +1,14 @@
-from renac_ble.ble import RenacBLE
+"""High level API for RENAC inverters."""
 
-from renac_ble.modbus import validate_crc
+import logging
+
 from bleak.backends.characteristic import BleakGATTCharacteristic
+
+from renac_ble.ble import RenacBLE
+from renac_ble.modbus import validate_crc
 from renac_ble.inverter_registers import *
+
+logger = logging.getLogger(__name__)
 
 OVERVIEW_REGISTERS = {
     "load_power": LOAD_POWER,
@@ -13,24 +19,38 @@ OVERVIEW_REGISTERS = {
 
 
 class RenacInverterBLE(RenacBLE):
-    def __init__(self, address: str):
+    """Client for interacting with RENAC hybrid inverters."""
+
+    def __init__(self, address: str) -> None:
         super().__init__(address)
 
-    async def _notify_handler(self, sender: BleakGATTCharacteristic, data: bytearray):
+    async def _notify_handler(
+        self, sender: BleakGATTCharacteristic, data: bytearray
+    ) -> None:
+        """Validate CRC before delegating to the base handler."""
+
         if not validate_crc(data):
-            print("⚠️ CRC check failed in inverter response")
+            logger.warning("CRC check failed in inverter response")
             return
         await super()._notify_handler(sender, data)
 
     async def get_info(self) -> dict | None:
+        """Return basic information about the inverter."""
+
         return await self.read_named_register_block(INVERTER_BASIC_INFO)
 
-    async def get_power_and_energy_overview(self):
+    async def get_power_and_energy_overview(self) -> dict | None:
+        """Collect an overview of current power and energy values."""
+
         result = await self.read_named_register_block(TOTAL_ENERGY_BLOCK)
         for name, register in OVERVIEW_REGISTERS.items():
             result[name] = await self.read_named_register(register)
         eps_data = await self.read_named_register_block(EPS_POWER_BLOCK)
-        result['eps_power'] = (eps_data["eps_r_power"] + eps_data["eps_s_power"] + eps_data["eps_t_power"])
+        result["eps_power"] = (
+            eps_data["eps_r_power"]
+            + eps_data["eps_s_power"]
+            + eps_data["eps_t_power"]
+        )
         return result
 
     async def get_max_charge_current(self) -> int | None:

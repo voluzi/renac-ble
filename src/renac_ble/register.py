@@ -1,3 +1,5 @@
+"""Typed definitions for RENAC Modbus registers."""
+
 from typing import TypedDict, Literal, List
 
 
@@ -22,3 +24,4 @@ class RegisterBlock(TypedDict):
     address: int
     count: int
     fields: List[RegisterField]
+
