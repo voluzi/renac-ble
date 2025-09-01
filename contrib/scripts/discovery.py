@@ -1,9 +1,15 @@
+"""Utility script for discovering RENAC BLE devices."""
+
 import asyncio
+
 from bleak import BleakScanner, BleakClient
 
 TARGET_NAME = "HF-LPT270"
 
-async def explore_device(device):
+
+async def explore_device(device) -> None:
+    """Connect to a device and list its services and characteristics."""
+
     async with BleakClient(device) as client:  # pass full device object
         print(f"\n🔌 Connected to {device.name} [{device.address}]")
         print("📡 Discovering services and characteristics...\n")
@@ -11,12 +17,19 @@ async def explore_device(device):
         for service in client.services:
             print(f"🔧 Service: {service.uuid}")
             for char in service.characteristics:
-                props = ', '.join(char.properties)
-                print(f"  └─ 📍 Characteristic: {char.uuid} | Properties: {props}")
+                props = ", ".join(char.properties)
+                print(
+                    f"  └─ 📍 Characteristic: {char.uuid} | Properties: {props}"
+                )
 
-        print(f"✅ Finished setup for {device.name} [{device.address}] — listening for notifications...\n")
+        print(
+            f"✅ Finished setup for {device.name} [{device.address}] — listening for notifications...\n"
+        )
 
-async def main():
+
+async def main() -> None:
+    """Scan for devices named ``TARGET_NAME`` and explore them."""
+
     print("🔍 Scanning for BLE devices...")
     devices = await BleakScanner.discover(timeout=15.0)
 
@@ -31,5 +44,6 @@ async def main():
 
     # Explore all in parallel using full device object (NOT just address)
     await asyncio.gather(*(explore_device(d) for d in matching_devices))
+
 
 asyncio.run(main())

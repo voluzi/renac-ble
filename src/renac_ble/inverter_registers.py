@@ -1,3 +1,5 @@
+"""Register definitions for RENAC inverters."""
+
 from renac_ble.register import Register, RegisterBlock
 
 # https://www.photovoltaikforum.com/core/file-download/380139/

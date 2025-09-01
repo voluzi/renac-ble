@@ -1,5 +1,11 @@
+"""Utility helpers for Modbus-like framing used by RENAC devices."""
+
+import logging
 from typing import Literal, Union
+
 from renac_ble.register import RegisterBlock
+
+logger = logging.getLogger(__name__)
 
 SLAVE_ID = 0x01
 READ_REGISTER_CODE = 0x03
@@ -7,6 +13,8 @@ WRITE_REGISTER_CODE = 0x06
 
 
 def crc16(data: bytes) -> bytes:
+    """Return payload with appended Modbus CRC16 checksum."""
+
     crc = 0xFFFF
     for pos in data:
         crc ^= pos
@@ -16,10 +24,12 @@ def crc16(data: bytes) -> bytes:
                 crc ^= 0xA001
             else:
                 crc >>= 1
-    return data + crc.to_bytes(2, byteorder='little')
+    return data + crc.to_bytes(2, byteorder="little")
 
 
 def validate_crc(data: bytes) -> bool:
+    """Validate the trailing CRC of ``data``."""
+
     if len(data) < 3:
         return False
     payload, received_crc = data[:-2], data[-2:]
@@ -28,25 +38,35 @@ def validate_crc(data: bytes) -> bool:
 
 
 def build_read_request(address: int, count: int) -> bytes:
-    return crc16(bytes([
-        SLAVE_ID,
-        READ_REGISTER_CODE,
-        (address >> 8) & 0xFF,
-        address & 0xFF,
-        (count >> 8) & 0xFF,
-        count & 0xFF,
-    ]))
+    """Construct a Modbus read request for ``count`` registers."""
+
+    return crc16(
+        bytes(
+            [
+                SLAVE_ID,
+                READ_REGISTER_CODE,
+                (address >> 8) & 0xFF,
+                address & 0xFF,
+                (count >> 8) & 0xFF,
+                count & 0xFF,
+            ]
+        )
+    )
 
 
 def build_write_request(address: int, value: int) -> bytes:
-    request = bytes([
-        SLAVE_ID,
-        WRITE_REGISTER_CODE,
-        (address >> 8) & 0xFF,
-        address & 0xFF,
-        (value >> 8) & 0xFF,
-        value & 0xFF,
-    ])
+    """Construct a Modbus write request for a single register."""
+
+    request = bytes(
+        [
+            SLAVE_ID,
+            WRITE_REGISTER_CODE,
+            (address >> 8) & 0xFF,
+            address & 0xFF,
+            (value >> 8) & 0xFF,
+            value & 0xFF,
+        ]
+    )
     return crc16(request)
 
 
@@ -54,6 +74,8 @@ Fmt = Literal["ascii", "uint16", "int16", "uint32", "int32", "custom"]
 
 
 def parse_value(data: bytes, fmt: Fmt, scale: float = 1.0) -> Union[str, float, bytes]:
+    """Parse ``data`` according to ``fmt`` and scaling factor."""
+
     if fmt == "ascii":
         return data.decode("ascii", errors="ignore").strip("\x00 ")
     elif fmt in ("uint16", "uint32"):
@@ -67,6 +89,8 @@ def parse_value(data: bytes, fmt: Fmt, scale: float = 1.0) -> Union[str, float, 
 
 
 def parse_response(data: bytes, fmt: Fmt, count: int, scale: float) -> float:
+    """Parse a Modbus response for a single value."""
+
     expected_len = count * 2
     if len(data) < expected_len:
         raise ValueError("Not enough data in response")
@@ -74,21 +98,25 @@ def parse_response(data: bytes, fmt: Fmt, count: int, scale: float) -> float:
 
 
 def parse_block_response(data: bytes, block: RegisterBlock) -> dict:
+    """Parse a block of registers according to ``block`` definition."""
+
     result = {}
     for field in block["fields"]:
-        raw = data[field["offset"]:field["offset"] + field["length"]]
+        raw = data[field["offset"] : field["offset"] + field["length"]]
         result[field["name"]] = parse_value(raw, field["fmt"], field["scale"])
     return result
 
 
 def validate_write_response(data: bytes, expected_address: int, expected_value: int) -> bool:
+    """Validate a Modbus write response against expected values."""
+
     if len(data) < 6:
-        print("⚠️ Not enough data to validate write response")
+        logger.warning("Not enough data to validate write response")
         return False
 
     function_code = data[1]
     if function_code != 0x06:
-        print(f"⚠️ Unexpected function code: {function_code}")
+        logger.warning("Unexpected function code: %s", function_code)
         return False
 
     addr = int.from_bytes(data[2:4], "big")

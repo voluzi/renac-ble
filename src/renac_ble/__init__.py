@@ -1,3 +1,5 @@
+"""Public package interface for ``renac_ble``."""
+
 from importlib.metadata import PackageNotFoundError, version as _version
 
 try:
@@ -27,3 +29,4 @@ __all__ = [
     "RenacInverterBLE",
     *_regs_all,
 ]
+
