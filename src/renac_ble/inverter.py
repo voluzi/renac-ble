@@ -1,6 +1,7 @@
 """High level API for RENAC inverters."""
 
 import logging
+from enum import IntEnum
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
 
@@ -16,6 +17,13 @@ OVERVIEW_REGISTERS = {
     "battery_power": BATTERY_POWER,
     "battery_soc": BATTERY_SOC,
 }
+
+
+class WorkMode(IntEnum):
+    SELF_USE = 0
+    FORCE_TIME_USE = 1
+    BACKUP = 2
+    FEED_IN_FIRST = 3
 
 
 class RenacInverterBLE(RenacBLE):
@@ -52,6 +60,18 @@ class RenacInverterBLE(RenacBLE):
             + eps_data["eps_t_power"]
         )
         return result
+
+    async def get_work_mode(self) -> WorkMode | None:
+        value = await self.read_named_register(WORK_MODE)
+        if value is None:
+            return None
+        try:
+            return WorkMode(int(value))
+        except ValueError:
+            return None
+
+    async def set_work_mode(self, mode: WorkMode) -> bool:
+        return await self.write_named_register(WORK_MODE, int(mode))
 
     async def get_max_charge_current(self) -> int | None:
         return await self.read_named_register(MAXIMUM_CHARGE_CURRENT)

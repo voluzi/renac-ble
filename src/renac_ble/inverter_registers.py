@@ -215,6 +215,18 @@ BATTERY_TOTAL_DISCHARGE_ENERGY: Register = {
     "unit": "kWh",
 }
 
+# 0: Self use
+# 1: ForceTime Use
+# 2: Back up
+# 3: Feed-in First
+WORK_MODE: Register = {
+    "address": 21000,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
 MAXIMUM_CHARGE_CURRENT: Register = {
     "address": 21016,
     "count": 1,

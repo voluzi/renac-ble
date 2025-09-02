@@ -10,7 +10,7 @@ except PackageNotFoundError:  # pragma: no cover
 # Public API (kept for backward compatibility)
 from .ble import RenacBLE
 from .wallbox import RenacWallboxBLE
-from .inverter import RenacInverterBLE
+from .inverter import RenacInverterBLE, WorkMode
 
 _regs_all: list[str]
 try:
@@ -27,6 +27,7 @@ __all__ = [
     "RenacBLE",
     "RenacWallboxBLE",
     "RenacInverterBLE",
+    "WorkMode",
     *_regs_all,
 ]
 
