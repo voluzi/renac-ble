@@ -70,41 +70,41 @@ class RenacInverterBLE(RenacBLE):
         except ValueError:
             return None
 
-    async def set_work_mode(self, mode: WorkMode) -> bool:
+    async def set_work_mode(self, mode: WorkMode) -> bool | None:
         return await self.write_named_register(WORK_MODE, int(mode))
 
     async def get_max_charge_current(self) -> int | None:
         return await self.read_named_register(MAXIMUM_CHARGE_CURRENT)
 
-    async def set_max_charge_current(self, value: int | None) -> bool:
+    async def set_max_charge_current(self, value: int | None) -> bool | None:
         return await self.write_named_register(MAXIMUM_CHARGE_CURRENT, value)
 
     async def get_max_discharge_current(self) -> int | None:
         return await self.read_named_register(MAXIMUM_DISCHARGE_CURRENT)
 
-    async def set_max_discharge_current(self, value: int | None) -> bool:
+    async def set_max_discharge_current(self, value: int | None) -> bool | None:
         return await self.write_named_register(MAXIMUM_DISCHARGE_CURRENT, value)
 
     async def get_min_soc(self) -> int | None:
         return await self.read_named_register(MIN_SOC)
 
-    async def set_min_soc(self, value: int | None) -> bool:
+    async def set_min_soc(self, value: int | None) -> bool | None:
         return await self.write_named_register(MIN_SOC, value)
 
     async def get_min_soc_on_grid(self) -> int | None:
         return await self.read_named_register(MIN_SOC_ON_GRID)
 
-    async def set_min_soc_on_grid(self, value: int | None) -> bool:
+    async def set_min_soc_on_grid(self, value: int | None) -> bool | None:
         return await self.write_named_register(MIN_SOC_ON_GRID, value)
 
     async def get_export_limit(self) -> int | None:
         return await self.read_named_register(EXPORT_LIMIT)
 
-    async def set_export_limit(self, value: int | None) -> bool:
+    async def set_export_limit(self, value: int | None) -> bool | None:
         return await self.write_named_register(EXPORT_LIMIT, value)
 
     async def get_power_limit_percent(self) -> int | None:
         return await self.read_named_register(POWER_LIMIT_PERCENT)
 
-    async def set_power_limit_percent(self, value: int | None) -> bool:
+    async def set_power_limit_percent(self, value: int | None) -> bool | None:
         return await self.write_named_register(POWER_LIMIT_PERCENT, value)

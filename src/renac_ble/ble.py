@@ -12,7 +12,6 @@ from renac_ble.modbus import (
     parse_response,
     parse_block_response,
     build_write_request,
-    validate_write_response,
 )
 from renac_ble.register import Register, RegisterBlock
 
@@ -51,7 +50,7 @@ class RenacBLE:
     def is_connected(self) -> bool:
         """Return ``True`` if the BLE client is connected."""
 
-        return self.client.is_connected
+        return self.client is not None and self.client.is_connected
 
     async def disconnect(self) -> None:
         """Disconnect and stop notifications if the client is connected."""
