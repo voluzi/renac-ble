@@ -108,7 +108,11 @@ def parse_block_response(data: bytes, block: RegisterBlock) -> dict:
 
 
 def validate_write_response(data: bytes, expected_address: int, expected_value: int) -> bool:
-    """Validate a Modbus write response against expected values."""
+    """Validate a Modbus write response against expected values.
+
+    Note: This function is currently unused but kept for potential future use
+    if more robust write response validation is needed.
+    """
 
     if len(data) < 6:
         logger.warning("Not enough data to validate write response")
