@@ -274,3 +274,126 @@ POWER_LIMIT_PERCENT: Register = {
     "scale": 1,
     "unit": "Pn/100",
 }
+
+# Force Time Use Mode - Period 1 Grid Charge Settings
+P1_GRID_CHARGE_FLAG: Register = {
+    "address": 21001,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+P1_CHARGE_START_HOUR: Register = {
+    "address": 21002,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+P1_CHARGE_START_MINUTE: Register = {
+    "address": 21003,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+P1_CHARGE_END_HOUR: Register = {
+    "address": 21004,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+P1_CHARGE_END_MINUTE: Register = {
+    "address": 21005,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+# Force Time Use Mode - Period 2 Grid Charge Settings
+P2_GRID_CHARGE_FLAG: Register = {
+    "address": 21006,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+P2_CHARGE_START_HOUR: Register = {
+    "address": 21007,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+P2_CHARGE_START_MINUTE: Register = {
+    "address": 21008,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+P2_CHARGE_END_HOUR: Register = {
+    "address": 21009,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+P2_CHARGE_END_MINUTE: Register = {
+    "address": 21010,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+# Backup Mode Grid Charge Settings
+BACKUP_GRID_CHARGE_FLAG: Register = {
+    "address": 21011,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+BACKUP_CHARGE_START_HOUR: Register = {
+    "address": 21012,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+BACKUP_CHARGE_START_MINUTE: Register = {
+    "address": 21013,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+BACKUP_CHARGE_END_HOUR: Register = {
+    "address": 21014,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
+BACKUP_CHARGE_END_MINUTE: Register = {
+    "address": 21015,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}

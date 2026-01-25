@@ -3,3 +3,4 @@
 .env
 .envrc
 __pycache__
+src/renac_ble.egg-info

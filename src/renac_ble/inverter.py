@@ -1,6 +1,7 @@
 """High level API for RENAC inverters."""
 
 import logging
+from dataclasses import dataclass
 from enum import IntEnum
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -24,6 +25,17 @@ class WorkMode(IntEnum):
     FORCE_TIME_USE = 1
     BACKUP = 2
     FEED_IN_FIRST = 3
+
+
+@dataclass
+class GridChargePeriod:
+    """Represents a grid charge time period configuration."""
+
+    enabled: bool
+    start_hour: int
+    start_minute: int
+    end_hour: int
+    end_minute: int
 
 
 class RenacInverterBLE(RenacBLE):
@@ -108,3 +120,93 @@ class RenacInverterBLE(RenacBLE):
 
     async def set_power_limit_percent(self, value: int | None) -> bool | None:
         return await self.write_named_register(POWER_LIMIT_PERCENT, value)
+
+    # Force Time Use Mode - Period 1 Grid Charge Settings
+
+    async def get_force_time_period1(self) -> GridChargePeriod | None:
+        """Get Force Time Use mode period 1 grid charge settings."""
+        enabled = await self.read_named_register(P1_GRID_CHARGE_FLAG)
+        start_hour = await self.read_named_register(P1_CHARGE_START_HOUR)
+        start_minute = await self.read_named_register(P1_CHARGE_START_MINUTE)
+        end_hour = await self.read_named_register(P1_CHARGE_END_HOUR)
+        end_minute = await self.read_named_register(P1_CHARGE_END_MINUTE)
+        if None in (enabled, start_hour, start_minute, end_hour, end_minute):
+            return None
+        return GridChargePeriod(
+            enabled=bool(int(enabled)),
+            start_hour=int(start_hour),
+            start_minute=int(start_minute),
+            end_hour=int(end_hour),
+            end_minute=int(end_minute),
+        )
+
+    async def set_force_time_period1(self, period: GridChargePeriod) -> bool:
+        """Set Force Time Use mode period 1 grid charge settings."""
+        results = [
+            await self.write_named_register(P1_GRID_CHARGE_FLAG, int(period.enabled)),
+            await self.write_named_register(P1_CHARGE_START_HOUR, period.start_hour),
+            await self.write_named_register(P1_CHARGE_START_MINUTE, period.start_minute),
+            await self.write_named_register(P1_CHARGE_END_HOUR, period.end_hour),
+            await self.write_named_register(P1_CHARGE_END_MINUTE, period.end_minute),
+        ]
+        return all(r is True for r in results)
+
+    # Force Time Use Mode - Period 2 Grid Charge Settings
+
+    async def get_force_time_period2(self) -> GridChargePeriod | None:
+        """Get Force Time Use mode period 2 grid charge settings."""
+        enabled = await self.read_named_register(P2_GRID_CHARGE_FLAG)
+        start_hour = await self.read_named_register(P2_CHARGE_START_HOUR)
+        start_minute = await self.read_named_register(P2_CHARGE_START_MINUTE)
+        end_hour = await self.read_named_register(P2_CHARGE_END_HOUR)
+        end_minute = await self.read_named_register(P2_CHARGE_END_MINUTE)
+        if None in (enabled, start_hour, start_minute, end_hour, end_minute):
+            return None
+        return GridChargePeriod(
+            enabled=bool(int(enabled)),
+            start_hour=int(start_hour),
+            start_minute=int(start_minute),
+            end_hour=int(end_hour),
+            end_minute=int(end_minute),
+        )
+
+    async def set_force_time_period2(self, period: GridChargePeriod) -> bool:
+        """Set Force Time Use mode period 2 grid charge settings."""
+        results = [
+            await self.write_named_register(P2_GRID_CHARGE_FLAG, int(period.enabled)),
+            await self.write_named_register(P2_CHARGE_START_HOUR, period.start_hour),
+            await self.write_named_register(P2_CHARGE_START_MINUTE, period.start_minute),
+            await self.write_named_register(P2_CHARGE_END_HOUR, period.end_hour),
+            await self.write_named_register(P2_CHARGE_END_MINUTE, period.end_minute),
+        ]
+        return all(r is True for r in results)
+
+    # Backup Mode Grid Charge Settings
+
+    async def get_backup_grid_charge(self) -> GridChargePeriod | None:
+        """Get Backup mode grid charge settings."""
+        enabled = await self.read_named_register(BACKUP_GRID_CHARGE_FLAG)
+        start_hour = await self.read_named_register(BACKUP_CHARGE_START_HOUR)
+        start_minute = await self.read_named_register(BACKUP_CHARGE_START_MINUTE)
+        end_hour = await self.read_named_register(BACKUP_CHARGE_END_HOUR)
+        end_minute = await self.read_named_register(BACKUP_CHARGE_END_MINUTE)
+        if None in (enabled, start_hour, start_minute, end_hour, end_minute):
+            return None
+        return GridChargePeriod(
+            enabled=bool(int(enabled)),
+            start_hour=int(start_hour),
+            start_minute=int(start_minute),
+            end_hour=int(end_hour),
+            end_minute=int(end_minute),
+        )
+
+    async def set_backup_grid_charge(self, period: GridChargePeriod) -> bool:
+        """Set Backup mode grid charge settings."""
+        results = [
+            await self.write_named_register(BACKUP_GRID_CHARGE_FLAG, int(period.enabled)),
+            await self.write_named_register(BACKUP_CHARGE_START_HOUR, period.start_hour),
+            await self.write_named_register(BACKUP_CHARGE_START_MINUTE, period.start_minute),
+            await self.write_named_register(BACKUP_CHARGE_END_HOUR, period.end_hour),
+            await self.write_named_register(BACKUP_CHARGE_END_MINUTE, period.end_minute),
+        ]
+        return all(r is True for r in results)
