@@ -47,6 +47,9 @@ async def main():
     await wallbox.connect()
     print("⚡️ Connected to wallbox")
 
+    print("Wallbox settings:", await wallbox.get_basic_settings())
+    await wallbox.set_max_output_current(16)  # amperes, 6–32
+
     await inverter.disconnect()
     await wallbox.disconnect()
 
