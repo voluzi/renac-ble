@@ -15,8 +15,10 @@ from renac_ble.modbus import (
     READ_REGISTER_CODE,
     SLAVE_ID,
     WRITE_MULTIPLE_REGISTERS_CODE,
+    WRITE_REGISTER_CODE,
     build_read_request,
     build_write_multiple_request,
+    build_write_request,
     validate_crc,
 )
 
@@ -34,6 +36,11 @@ MIN_OUTPUT_CURRENT = 6.0  # IEC 61851 lower bound for AC charging
 MAX_OUTPUT_CURRENT = 32.0
 
 READ_ATTEMPTS = 2
+
+# Charger command register, written with FC06 like the RENAC SEC app does.
+CHARGER_COMMAND_ADDRESS = 10300
+CHARGER_COMMAND_START = 1
+CHARGER_COMMAND_STOP = 2
 
 
 class ChargingMode(IntEnum):
@@ -153,6 +160,32 @@ class RenacWallboxBLE(RenacBLE):
         if resp is None:
             return None
         return resp[:6] == echo
+
+    async def _send_command(self, value: int) -> bool:
+        """Write a charger command with FC06 and confirm the echo."""
+
+        frame = build_write_request(CHARGER_COMMAND_ADDRESS, value)
+
+        def expect(reply: bytes) -> bool:
+            return reply[1] in (WRITE_REGISTER_CODE, WRITE_REGISTER_CODE | 0x80)
+
+        resp = await self._request(frame, expect)
+        return resp is not None and resp[:6] == frame[:6]
+
+    async def start_charging(self) -> bool:
+        """Ask the wallbox to start charging.
+
+        The car must still be requesting power: after a stop, some cars (a
+        Polestar 4, for one) stay idle until the plug is reinserted, and the
+        wallbox then reports ``completed`` whatever this command says.
+        """
+
+        return await self._send_command(CHARGER_COMMAND_START)
+
+    async def stop_charging(self) -> bool:
+        """Stop the current charging session."""
+
+        return await self._send_command(CHARGER_COMMAND_STOP)
 
     async def get_basic_settings(self) -> Optional[dict]:
         """Return the parsed basic settings block."""

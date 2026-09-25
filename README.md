@@ -49,6 +49,7 @@ async def main():
 
     print("Wallbox settings:", await wallbox.get_basic_settings())
     await wallbox.set_max_output_current(16)  # amperes, 6–32
+    await wallbox.stop_charging()  # some cars only resume after re-plugging
 
     await inverter.disconnect()
     await wallbox.disconnect()

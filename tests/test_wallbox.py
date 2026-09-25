@@ -120,3 +120,14 @@ def test_charging_mode_and_window_only_touch_their_fields():
     wb, _ = make_wallbox([READ_REPLY, WRITE_ECHO, crc16(bytes.fromhex("01032a") + window)])
     assert asyncio.run(wb.set_allowed_charging_time(ChargingWindow(22, 0, 7, 30))) is True
     assert wb.client.writes[1] == WALLBOX_PREFIX + build_write_multiple_request(10200, window)
+
+
+def test_stop_and_start_send_the_captured_command_frames():
+    stop, start = bytes.fromhex("0106283c0002c1a7"), bytes.fromhex("0106283c000181a6")
+
+    async def stop_then_start(wb):
+        return await wb.stop_charging(), await wb.start_charging()
+
+    wb, _ = make_wallbox([stop, start])
+    assert asyncio.run(stop_then_start(wb)) == (True, True)
+    assert wb.client.writes == [WALLBOX_PREFIX + stop, WALLBOX_PREFIX + start]
