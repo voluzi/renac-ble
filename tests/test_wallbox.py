@@ -5,6 +5,8 @@ import pytest
 from renac_ble.modbus import build_write_multiple_request, crc16
 from renac_ble.wallbox import (
     WALLBOX_PREFIX,
+    ChargingMode,
+    ChargingWindow,
     RenacWallboxBLE,
     parse_basic_settings,
     with_max_output_current,
@@ -105,3 +107,16 @@ def test_set_max_output_current_rejects_out_of_range():
     with pytest.raises(ValueError):
         asyncio.run(wb.set_max_output_current(40))
     assert wb.client.writes == []
+
+
+def test_charging_mode_and_window_only_touch_their_fields():
+    rfid = bytes.fromhex("0001") + BASIC_BLOCK[2:]
+    window = BASIC_BLOCK[:8] + bytes([22, 0, 7, 30]) + BASIC_BLOCK[12:]
+
+    wb, _ = make_wallbox([READ_REPLY, WRITE_ECHO, crc16(bytes.fromhex("01032a") + rfid)])
+    assert asyncio.run(wb.set_charging_mode(ChargingMode.RFID)) is True
+    assert wb.client.writes[1] == WALLBOX_PREFIX + build_write_multiple_request(10200, rfid)
+
+    wb, _ = make_wallbox([READ_REPLY, WRITE_ECHO, crc16(bytes.fromhex("01032a") + window)])
+    assert asyncio.run(wb.set_allowed_charging_time(ChargingWindow(22, 0, 7, 30))) is True
+    assert wb.client.writes[1] == WALLBOX_PREFIX + build_write_multiple_request(10200, window)

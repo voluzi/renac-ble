@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import struct
+from dataclasses import dataclass
 from datetime import datetime
+from enum import IntEnum
 from typing import Callable, Optional
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -32,6 +34,24 @@ MIN_OUTPUT_CURRENT = 6.0  # IEC 61851 lower bound for AC charging
 MAX_OUTPUT_CURRENT = 32.0
 
 READ_ATTEMPTS = 2
+
+
+class ChargingMode(IntEnum):
+    """How the wallbox authorises a charging session."""
+
+    APP = 0
+    RFID = 1
+    PLUG_AND_PLAY = 2
+
+
+@dataclass
+class ChargingWindow:
+    """Daily time window in which charging is allowed."""
+
+    start_hour: int
+    start_minute: int
+    end_hour: int
+    end_minute: int
 
 
 class RenacWallboxBLE(RenacBLE):
@@ -155,19 +175,55 @@ class RenacWallboxBLE(RenacBLE):
                 f"max output current must be between {MIN_OUTPUT_CURRENT} and "
                 f"{MAX_OUTPUT_CURRENT} A, got {amps}"
             )
+        return await self._update_basic_settings(
+            lambda raw: with_max_output_current(raw, tenths / 10)
+        )
+
+    async def get_charging_mode(self) -> Optional[ChargingMode]:
+        """Return how charging sessions are authorised."""
+
+        settings = await self.get_basic_settings()
+        return ChargingMode(settings["charging_mode"]) if settings else None
+
+    async def set_charging_mode(self, mode: ChargingMode) -> bool:
+        """Set how charging sessions are authorised (app, RFID or plug and play)."""
+
+        mode = ChargingMode(mode)
+        return await self._update_basic_settings(
+            lambda raw: struct.pack(">H", mode) + raw[2:]
+        )
+
+    async def get_allowed_charging_time(self) -> Optional[ChargingWindow]:
+        """Return the daily window in which charging is allowed."""
+
+        raw = await self._read_registers(BASIC_SETTINGS_ADDRESS, BASIC_SETTINGS_COUNT)
+        return ChargingWindow(*raw[8:12]) if raw else None
+
+    async def set_allowed_charging_time(self, window: ChargingWindow) -> bool:
+        """Set the daily window in which charging is allowed."""
+
+        if not (0 <= window.start_hour <= 23 and 0 <= window.end_hour <= 23
+                and 0 <= window.start_minute <= 59 and 0 <= window.end_minute <= 59):
+            raise ValueError(f"invalid charging window {window}")
+        data = bytes([window.start_hour, window.start_minute, window.end_hour, window.end_minute])
+        return await self._update_basic_settings(lambda raw: raw[:8] + data + raw[12:])
+
+    async def _update_basic_settings(self, patch: Callable[[bytes], bytes]) -> bool:
+        """Read, patch and write back the basic settings block, then verify it."""
+
         # The block is written whole, so a concurrent settings write between
         # our read and write would be silently reverted.
         async with self._settings_lock:
             raw = await self._read_registers(BASIC_SETTINGS_ADDRESS, BASIC_SETTINGS_COUNT)
             if raw is None:
                 return False
-            block = with_max_output_current(raw, tenths / 10)
+            block = patch(raw)
             if block == raw:
                 return True
             # A lost echo is settled by the readback rather than a blind rewrite.
             if await self._write_registers(BASIC_SETTINGS_ADDRESS, block) is False:
                 return False
-            return await self.get_max_output_current() == tenths / 10
+            return await self._read_registers(BASIC_SETTINGS_ADDRESS, BASIC_SETTINGS_COUNT) == block
 
 
 def with_max_output_current(block: bytes, amps: float) -> bytes:
