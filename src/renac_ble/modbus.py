@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 SLAVE_ID = 0x01
 READ_REGISTER_CODE = 0x03
 WRITE_REGISTER_CODE = 0x06
+WRITE_MULTIPLE_REGISTERS_CODE = 0x10
 
 
 def crc16(data: bytes) -> bytes:
@@ -70,7 +71,29 @@ def build_write_request(address: int, value: int) -> bytes:
     return crc16(request)
 
 
-Fmt = Literal["ascii", "uint16", "int16", "uint32", "int32", "custom"]
+def build_write_multiple_request(address: int, data: bytes) -> bytes:
+    """Construct a Modbus write request (FC16) for consecutive registers."""
+
+    if not data or len(data) % 2:
+        raise ValueError("data must be a non-empty, even number of bytes")
+    count = len(data) // 2
+    return crc16(
+        bytes(
+            [
+                SLAVE_ID,
+                WRITE_MULTIPLE_REGISTERS_CODE,
+                (address >> 8) & 0xFF,
+                address & 0xFF,
+                (count >> 8) & 0xFF,
+                count & 0xFF,
+                len(data),
+            ]
+        )
+        + bytes(data)
+    )
+
+
+Fmt =Literal["ascii", "uint16", "int16", "uint32", "int32", "custom"]
 
 
 def parse_value(data: bytes, fmt: Fmt, scale: float = 1.0) -> Union[str, float, bytes]:
