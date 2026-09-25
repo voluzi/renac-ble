@@ -37,6 +37,10 @@ MAX_OUTPUT_CURRENT = 32.0
 
 READ_ATTEMPTS = 2
 
+# Live status block: identity, state, per-phase voltage/current, power, energy.
+STATUS_ADDRESS = 10000
+STATUS_COUNT = 69
+
 # Charger command register, written with FC06 like the RENAC SEC app does.
 CHARGER_COMMAND_ADDRESS = 10300
 CHARGER_COMMAND_START = 1
@@ -188,6 +192,20 @@ class RenacWallboxBLE(RenacBLE):
         """Stop the current charging session."""
 
         return await self._send_command(CHARGER_COMMAND_STOP)
+
+    async def get_status(self) -> Optional[dict]:
+        """Read the live status, in the same shape as the pushed notifications.
+
+        The wallbox only pushes its status about once a minute; this reads the
+        same block on demand.
+        """
+
+        raw = await self._read_registers(STATUS_ADDRESS, STATUS_COUNT)
+        if raw is None:
+            return None
+        return parse_wallbox_notification(
+            WALLBOX_PREFIX + bytes([SLAVE_ID, READ_REGISTER_CODE, len(raw)]) + raw
+        )
 
     async def get_basic_settings(self) -> Optional[dict]:
         """Return the parsed basic settings block."""

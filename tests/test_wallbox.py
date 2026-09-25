@@ -131,3 +131,13 @@ def test_stop_and_start_send_the_captured_command_frames():
     wb, _ = make_wallbox([stop, start])
     assert asyncio.run(stop_then_start(wb)) == (True, True)
     assert wb.client.writes == [WALLBOX_PREFIX + stop, WALLBOX_PREFIX + start]
+
+
+def test_get_status_parses_like_a_push():
+    # The status read returns the pushed block minus its trailing registers.
+    data = STATUS_PUSH[10:10 + 138]
+    wb, _ = make_wallbox([crc16(bytes([1, 3, 138]) + data)])
+    status = asyncio.run(wb.get_status())
+    assert status["sn"] == "8DP2231230918071"
+    assert status["state"] == "idle"
+    assert status["phase_a_voltage"] == 254.0
