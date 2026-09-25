@@ -166,8 +166,10 @@ class RenacWallboxBLE(RenacBLE):
 
         frame = build_write_request(CHARGER_COMMAND_ADDRESS, value)
 
+        # Match the full echo, so a late reply to an earlier start or stop
+        # can't settle this one.
         def expect(reply: bytes) -> bool:
-            return reply[1] in (WRITE_REGISTER_CODE, WRITE_REGISTER_CODE | 0x80)
+            return reply[:6] == frame[:6] or reply[1] == WRITE_REGISTER_CODE | 0x80
 
         resp = await self._request(frame, expect)
         return resp is not None and resp[:6] == frame[:6]
