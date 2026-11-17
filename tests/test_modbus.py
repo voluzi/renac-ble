@@ -40,9 +40,13 @@ def test_buffer_resyncs_after_garbage_prefix():
     ]
 
 
-def test_buffer_reports_crc_failure_and_resyncs():
+@pytest.mark.parametrize('prefix', [b'', b'\xff\xfe'])
+def test_buffer_reports_crc_failure_and_resyncs(prefix):
     frame = crc16(b'\x01\x03\x02\x00\x14')
     corrupt = frame[:-1] + bytes([frame[-1] ^ 1])
-    events = ModbusFrameBuffer().feed(corrupt + frame)
-    assert events[0] == BadCrc(corrupt)
+    events = ModbusFrameBuffer().feed(prefix + corrupt + frame)
+    if prefix:
+        assert events[:2] == [Garbage(prefix), BadCrc(corrupt)]
+    else:
+        assert events[0] == BadCrc(corrupt)
     assert events[-1] == Frame(frame)

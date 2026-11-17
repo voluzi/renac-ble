@@ -233,6 +233,9 @@ class ModbusFrameBuffer:
                 events.append(Frame(candidate))
                 self.skip(size)
             else:
+                if garbage:
+                    events.append(Garbage(bytes(garbage)))
+                    garbage.clear()
                 events.append(BadCrc(candidate))
                 self.skip()
         if garbage:
