@@ -7,7 +7,7 @@ from bleak.exc import BleakError
 from renac_ble import ble
 from renac_ble.inverter import RenacInverterBLE
 from renac_ble.inverter_registers import MIN_SOC, TOTAL_ENERGY_BLOCK, EPS_POWER_BLOCK
-from renac_ble.modbus import build_write_request, crc16
+from renac_ble.modbus import build_write_multiple_request, build_write_request, crc16
 from renac_ble.wallbox import WALLBOX_PREFIX, CHARGER_COMMAND_ADDRESS, RenacWallboxBLE
 
 
@@ -319,5 +319,20 @@ def test_wallbox_command_exception_settles_request(make_device):
         assert await dev.stop_charging() is False
         assert len(dev.client.writes) == 1
         assert dev.stats.exceptions == 1
+        assert dev.stats.timeouts == 0
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('function', [6, 16])
+@pytest.mark.parametrize('size', [2, 3])
+def test_short_write_echo_fails_at_fragment_timeout(make_device, function, size):
+    async def scenario():
+        request = (build_write_request(MIN_SOC['address'], 20) if function == 6
+                   else build_write_multiple_request(MIN_SOC['address'], b'\x00\x14'))
+        dev = await make_device([[(0, request[:size])]])
+        started = time.monotonic()
+        assert await dev._transact(request) is None
+        assert time.monotonic() - started < dev.request_timeout
+        assert dev.stats.incomplete == 1
         assert dev.stats.timeouts == 0
     asyncio.run(scenario())

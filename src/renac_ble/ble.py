@@ -13,6 +13,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 
 from renac_ble.modbus import (
     EXCEPTION_NAMES,
+    SLAVE_ID,
     BadCrc,
     Frame,
     Garbage,
@@ -247,7 +248,9 @@ class RenacBLE:
         logger.warning("%s %s: incomplete response after %.1fs: got %d of %s bytes: %s",
                        self.address, pending.label, self.fragment_timeout,
                        len(data), frame_length(data), data.hex(" "))
-        if self._matches(pending.request, data):
+        if self._matches(pending.request, data) or (
+            len(data) < 4 and data[:2] == bytes([SLAVE_ID, pending.request[1]])
+        ):
             self._fail_pending(_BadResponse("incomplete"))
             self._clear_rx()
         else:
