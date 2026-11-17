@@ -56,16 +56,22 @@ class RenacInverterBLE(RenacBLE):
     async def get_power_and_energy_overview(self) -> dict | None:
         """Collect an overview of current power and energy values."""
 
-        result = await self.read_named_register_block(TOTAL_ENERGY_BLOCK)
+        result = {}
+        energy = await self.read_named_register_block(TOTAL_ENERGY_BLOCK)
+        if energy is not None:
+            result.update(energy)
         for name, register in OVERVIEW_REGISTERS.items():
-            result[name] = await self.read_named_register(register)
+            value = await self.read_named_register(register)
+            if value is not None:
+                result[name] = value
         eps_data = await self.read_named_register_block(EPS_POWER_BLOCK)
-        result["eps_power"] = (
-            eps_data["eps_r_power"]
-            + eps_data["eps_s_power"]
-            + eps_data["eps_t_power"]
-        )
-        return result
+        if eps_data is not None:
+            result["eps_power"] = (
+                eps_data["eps_r_power"]
+                + eps_data["eps_s_power"]
+                + eps_data["eps_t_power"]
+            )
+        return result or None
 
     async def get_work_mode(self) -> WorkMode | None:
         value = await self.read_named_register(WORK_MODE)
