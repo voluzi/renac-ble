@@ -99,7 +99,8 @@ def test_late_reply_after_timeout_does_not_shift_next_read(make_device, caplog):
         late = reply(10)
         # The stale FC06 also arrives during B, where the matcher must discard it.
         stale = build_write_request(123, 5)
-        dev = await make_device([[(0.22, late), (0.26, stale)], [(0.02, reply(42))]])
+        dev = await make_device([[(0.25, late)], [(0, stale), (0.05, reply(42))]])
+        dev.settle_delay = 0.15
         dev.read_attempts = 1
         assert await dev.get_min_soc() is None
         assert await dev.get_min_soc_on_grid() == 42
@@ -115,7 +116,7 @@ def test_crc_failure_fails_fast_and_retries(make_device, caplog):
         dev = await make_device([[(0, bad)], [(0, good)]])
         started = time.monotonic()
         assert await dev.get_min_soc() == 42
-        assert time.monotonic() - started < 0.15
+        assert time.monotonic() - started < dev.request_timeout
         assert dev.stats.crc_errors == 1
         assert dev.stats.retries == 1
         assert 'MIN_SOC@21018' in caplog.text
@@ -130,7 +131,7 @@ def test_incomplete_frame_fails_after_fragment_timeout(make_device, caplog):
         dev.read_attempts = 1
         started = time.monotonic()
         assert await dev.get_min_soc() is None
-        assert time.monotonic() - started < 0.15
+        assert time.monotonic() - started < dev.request_timeout
         assert dev.stats.incomplete == 1
         assert 'got 4 of 7 bytes' in caplog.text
         assert partial.hex(' ') in caplog.text
