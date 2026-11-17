@@ -4,10 +4,8 @@ import logging
 from dataclasses import dataclass
 from enum import IntEnum
 
-from bleak.backends.characteristic import BleakGATTCharacteristic
-
 from renac_ble.ble import RenacBLE
-from renac_ble.modbus import validate_crc
+from renac_ble import inverter_registers
 from renac_ble.inverter_registers import *
 
 logger = logging.getLogger(__name__)
@@ -17,6 +15,13 @@ OVERVIEW_REGISTERS = {
     "pv_power": PV1_POWER,
     "battery_power": BATTERY_POWER,
     "battery_soc": BATTERY_SOC,
+}
+
+
+_REGISTER_NAMES = {
+    (register["address"], register["count"]): name
+    for name, register in vars(inverter_registers).items()
+    if isinstance(register, dict) and "address" in register and "count" in register
 }
 
 
@@ -41,18 +46,7 @@ class GridChargePeriod:
 class RenacInverterBLE(RenacBLE):
     """Client for interacting with RENAC hybrid inverters."""
 
-    def __init__(self, address: str) -> None:
-        super().__init__(address)
-
-    async def _notify_handler(
-        self, sender: BleakGATTCharacteristic, data: bytearray
-    ) -> None:
-        """Validate CRC before delegating to the base handler."""
-
-        if not validate_crc(data):
-            logger.warning("CRC check failed in inverter response")
-            return
-        await super()._notify_handler(sender, data)
+    _register_names = _REGISTER_NAMES
 
     async def get_info(self) -> dict | None:
         """Return basic information about the inverter."""
@@ -62,16 +56,22 @@ class RenacInverterBLE(RenacBLE):
     async def get_power_and_energy_overview(self) -> dict | None:
         """Collect an overview of current power and energy values."""
 
-        result = await self.read_named_register_block(TOTAL_ENERGY_BLOCK)
+        result = {}
+        energy = await self.read_named_register_block(TOTAL_ENERGY_BLOCK)
+        if energy is not None:
+            result.update(energy)
         for name, register in OVERVIEW_REGISTERS.items():
-            result[name] = await self.read_named_register(register)
+            value = await self.read_named_register(register)
+            if value is not None:
+                result[name] = value
         eps_data = await self.read_named_register_block(EPS_POWER_BLOCK)
-        result["eps_power"] = (
-            eps_data["eps_r_power"]
-            + eps_data["eps_s_power"]
-            + eps_data["eps_t_power"]
-        )
-        return result
+        if eps_data is not None:
+            result["eps_power"] = (
+                eps_data["eps_r_power"]
+                + eps_data["eps_s_power"]
+                + eps_data["eps_t_power"]
+            )
+        return result or None
 
     async def get_work_mode(self) -> WorkMode | None:
         value = await self.read_named_register(WORK_MODE)

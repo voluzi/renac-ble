@@ -17,3 +17,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 renac_ble = ["py.typed"]
+
+[dependency-groups]
+dev = ["pytest>=9.2.0"]

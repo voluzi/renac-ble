@@ -13,13 +13,10 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from renac_ble.ble import RenacBLE
 from renac_ble.modbus import (
     READ_REGISTER_CODE,
-    SLAVE_ID,
-    WRITE_MULTIPLE_REGISTERS_CODE,
     WRITE_REGISTER_CODE,
-    build_read_request,
+    SLAVE_ID,
     build_write_multiple_request,
     build_write_request,
-    validate_crc,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,8 +31,6 @@ MAX_OUTPUT_CURRENT_OFFSET = 2  # byte offset of the u16, in 0.1 A
 
 MIN_OUTPUT_CURRENT = 6.0  # IEC 61851 lower bound for AC charging
 MAX_OUTPUT_CURRENT = 32.0
-
-READ_ATTEMPTS = 2
 
 # Live status block: identity, state, per-phase voltage/current, power, energy.
 STATUS_ADDRESS = 10000
@@ -68,11 +63,20 @@ class ChargingWindow:
 class RenacWallboxBLE(RenacBLE):
     """BLE client for RENAC wallbox chargers."""
 
+    _tx_prefix = WALLBOX_PREFIX
+    _write_response = False
+    _reassemble = False
+    _unexpected_frame_level = logging.DEBUG
+    _register_names = {
+        (STATUS_ADDRESS, STATUS_COUNT): "STATUS",
+        (BASIC_SETTINGS_ADDRESS, BASIC_SETTINGS_COUNT): "BASIC_SETTINGS",
+        (CHARGER_COMMAND_ADDRESS, 1): "CHARGER_COMMAND",
+    }
+
     def __init__(
         self, address: str, on_notification: Optional[Callable[[dict], None]] = None
     ) -> None:
         self._parsed_callback = on_notification
-        self._expect: Optional[Callable[[bytes], bool]] = None
         self._settings_lock = asyncio.Lock()
         self.request_timeout = 10.0
         super().__init__(address)
@@ -89,94 +93,32 @@ class RenacWallboxBLE(RenacBLE):
         if not data.startswith(WALLBOX_PREFIX):
             return
         frame = data[len(WALLBOX_PREFIX):]
-        # The wallbox also pushes unrelated frames (e.g. its clock) right after
-        # connecting, so only a frame matching the pending request answers it.
-        if self._expect is not None and validate_crc(frame) and self._expect(frame):
-            self._last_data = frame
-            self._response_event.set()
+        await super()._notify_handler(sender, bytearray(frame))
 
-    async def _request(
-        self, frame: bytes, expect: Callable[[bytes], bool]
-    ) -> Optional[bytes]:
-        """Send a Modbus frame and wait for the reply accepted by ``expect``."""
+    def _matches(self, request: bytes, frame: bytes) -> str | None:
+        match = super()._matches(request, frame)
+        if match == "ok" and request[1] == WRITE_REGISTER_CODE and frame[:6] != request[:6]:
+            return None
+        return match
 
-        if not self.is_connected():
-            raise ConnectionError(f"Wallbox {self.address} is not connected")
-        async with self._lock:
-            self._last_data = None
-            self._response_event.clear()
-            self._expect = expect
-            try:
-                await self.client.write_gatt_char(
-                    self.write_uuid, WALLBOX_PREFIX + frame, response=False
-                )
-                await asyncio.wait_for(self._response_event.wait(), timeout=self.request_timeout)
-            except asyncio.TimeoutError:
-                logger.warning("Timed out waiting for wallbox response")
-                return None
-            finally:
-                self._expect = None
-            return self._last_data
+    async def _request(self, frame: bytes) -> Optional[bytes]:
+        return await self._transact(frame)
 
     async def _read_registers(self, address: int, count: int) -> Optional[bytes]:
-        """Read ``count`` holding registers and return their raw bytes."""
-
-        size = count * 2
-
-        def expect(frame: bytes) -> bool:
-            return (
-                len(frame) == size + 5
-                and frame[0] == SLAVE_ID
-                and frame[1] == READ_REGISTER_CODE
-                and frame[2] == size
-            )
-
-        # Replies are occasionally lost over BLE; a read is safe to repeat.
-        for _ in range(READ_ATTEMPTS):
-            resp = await self._request(build_read_request(address, count), expect)
-            if resp:
-                return resp[3:3 + size]
-        return None
+        """Read holding registers with the shared retry policy."""
+        return await self._read_raw(address, count)
 
     async def _write_registers(self, address: int, data: bytes) -> Optional[bool]:
-        """Write consecutive registers with FC16 and confirm the echo.
-
-        Returns ``None`` when no reply arrived: the write may still have landed.
-        """
-
-        echo = bytes(
-            [
-                SLAVE_ID,
-                WRITE_MULTIPLE_REGISTERS_CODE,
-                (address >> 8) & 0xFF,
-                address & 0xFF,
-                0,
-                len(data) // 2,
-            ]
-        )
-
-        def expect(frame: bytes) -> bool:
-            return frame[1] == WRITE_MULTIPLE_REGISTERS_CODE or frame[1] == (
-                WRITE_MULTIPLE_REGISTERS_CODE | 0x80
-            )
-
-        resp = await self._request(build_write_multiple_request(address, data), expect)
-        if resp is None:
-            return None
-        return resp[:6] == echo
+        """Write consecutive registers once and confirm the FC16 echo."""
+        request = build_write_multiple_request(address, data)
+        resp = await self._request(request)
+        return resp[:6] == request[:6] if resp is not None else None
 
     async def _send_command(self, value: int) -> bool:
         """Write a charger command with FC06 and confirm the echo."""
-
-        frame = build_write_request(CHARGER_COMMAND_ADDRESS, value)
-
-        # Match the full echo, so a late reply to an earlier start or stop
-        # can't settle this one.
-        def expect(reply: bytes) -> bool:
-            return reply[:6] == frame[:6] or reply[1] == WRITE_REGISTER_CODE | 0x80
-
-        resp = await self._request(frame, expect)
-        return resp is not None and resp[:6] == frame[:6]
+        request = build_write_request(CHARGER_COMMAND_ADDRESS, value)
+        resp = await self._request(request)
+        return resp is not None and resp[:6] == request[:6]
 
     async def start_charging(self) -> bool:
         """Ask the wallbox to start charging.
