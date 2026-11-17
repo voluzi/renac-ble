@@ -269,12 +269,14 @@ def test_write_rounds_raw_value_and_reads_back_signed_values(make_device, value,
     asyncio.run(scenario())
 
 
-def test_different_write_echo_is_verified_by_readback(make_device):
+def test_different_write_echo_is_verified_by_readback(make_device, caplog):
     async def scenario():
         dev = await make_device([[(0, build_write_request(MIN_SOC['address'], 19))],
                                  [(0, reply(19))]])
         assert await dev.set_min_soc(20) is False
         assert len(dev.client.writes) == 2
+        assert len(caplog.records) == 1
+        assert 'echo differs, readback 19 (expected 20)' in caplog.text
     asyncio.run(scenario())
 
 

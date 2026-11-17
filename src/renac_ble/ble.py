@@ -353,13 +353,12 @@ class RenacBLE:
                 return False
             if frame[4:6] == request[4:6]:
                 return True
-            logger.warning("%s %s: write echo differs: %s", self.address,
-                           self.describe(request), frame.hex(" "))
         readback = await self._read_raw(register["address"], 1)
         actual = (int.from_bytes(readback, "big", signed=register["fmt"] == "int16")
                   if readback is not None else None)
-        logger.warning("%s %s: echo lost, readback %s (expected %s)",
-                       self.address, self.describe(request), actual, raw)
+        logger.warning("%s %s: echo %s, readback %s (expected %s)",
+                       self.address, self.describe(request),
+                       "lost" if frame is None else "differs", actual, raw)
         return actual == raw if actual is not None else None
 
     async def read_named_register_block(self, block: RegisterBlock) -> dict | None:
