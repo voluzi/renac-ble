@@ -1,6 +1,7 @@
 """Utility helpers for Modbus-like framing used by RENAC devices."""
 
 import logging
+from dataclasses import dataclass
 from typing import Literal, Union
 
 from renac_ble.register import RegisterBlock
@@ -150,3 +151,108 @@ def validate_write_response(data: bytes, expected_address: int, expected_value: 
     val = int.from_bytes(data[4:6], "big")
 
     return addr == expected_address and val == expected_value
+
+
+INVALID = "invalid"
+EXCEPTION_NAMES = {
+    1: "ILLEGAL FUNCTION",
+    2: "ILLEGAL DATA ADDRESS",
+    3: "ILLEGAL DATA VALUE",
+    4: "SERVER DEVICE FAILURE",
+    5: "ACKNOWLEDGE",
+    6: "SERVER DEVICE BUSY",
+    8: "MEMORY PARITY ERROR",
+    10: "GATEWAY PATH UNAVAILABLE",
+    11: "GATEWAY TARGET DEVICE FAILED TO RESPOND",
+}
+
+
+def frame_length(buf: bytes) -> int | None | Literal["invalid"]:
+    """Return the expected frame size, or whether its header is incomplete/invalid."""
+    if len(buf) < 2:
+        return None
+    if buf[0] != SLAVE_ID:
+        return INVALID
+    fc = buf[1]
+    if fc & 0x80 and fc & 0x7F in (0x03, 0x06, 0x10):
+        return 5
+    if fc in (0x06, 0x10):
+        return 8
+    if fc == 0x03:
+        if len(buf) < 3:
+            return None
+        count = buf[2]
+        return 5 + count if count and count <= 250 and not count % 2 else INVALID
+    return INVALID
+
+
+@dataclass(frozen=True)
+class Frame:
+    data: bytes
+
+
+@dataclass(frozen=True)
+class BadCrc:
+    data: bytes
+
+
+@dataclass(frozen=True)
+class Garbage:
+    data: bytes
+
+
+class ModbusFrameBuffer:
+    """Extract CRC-validated frames from a stream of notification bytes."""
+
+    def __init__(self) -> None:
+        self.pending = b""
+
+    def clear(self) -> None:
+        self.pending = b""
+
+    def skip(self, count: int = 1) -> None:
+        self.pending = self.pending[count:]
+
+    def feed(self, data: bytes) -> list[Frame | BadCrc | Garbage]:
+        self.pending += bytes(data)
+        events = []
+        garbage = bytearray()
+        while self.pending:
+            size = frame_length(self.pending)
+            if size == INVALID:
+                garbage.append(self.pending[0])
+                self.skip()
+                continue
+            if size is None or len(self.pending) < size:
+                break
+            candidate = self.pending[:size]
+            if validate_crc(candidate):
+                if garbage:
+                    events.append(Garbage(bytes(garbage)))
+                    garbage.clear()
+                events.append(Frame(candidate))
+                self.skip(size)
+            else:
+                events.append(BadCrc(candidate))
+                self.skip()
+        if garbage:
+            events.append(Garbage(bytes(garbage)))
+        return events
+
+
+def response_matches(request: bytes, frame: bytes) -> Literal["ok", "exception"] | None:
+    """Match a response header to the request, without requiring a complete frame."""
+    if len(frame) < 2 or frame[0] != SLAVE_ID:
+        return None
+    fc = request[1]
+    if frame[1] == fc | 0x80:
+        return "exception"
+    if frame[1] != fc:
+        return None
+    if fc == READ_REGISTER_CODE:
+        if len(frame) >= 3 and frame[2] == 2 * int.from_bytes(request[4:6], "big"):
+            return "ok"
+    elif fc in (WRITE_REGISTER_CODE, WRITE_MULTIPLE_REGISTERS_CODE):
+        if len(frame) >= 4 and frame[2:4] == request[2:4]:
+            return "ok"
+    return None
