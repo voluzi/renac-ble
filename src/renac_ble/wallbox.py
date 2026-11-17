@@ -13,6 +13,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from renac_ble.ble import RenacBLE
 from renac_ble.modbus import (
     READ_REGISTER_CODE,
+    WRITE_REGISTER_CODE,
     SLAVE_ID,
     build_write_multiple_request,
     build_write_request,
@@ -93,6 +94,12 @@ class RenacWallboxBLE(RenacBLE):
             return
         frame = data[len(WALLBOX_PREFIX):]
         await super()._notify_handler(sender, bytearray(frame))
+
+    def _matches(self, request: bytes, frame: bytes) -> str | None:
+        match = super()._matches(request, frame)
+        if match == "ok" and request[1] == WRITE_REGISTER_CODE and frame[:6] != request[:6]:
+            return None
+        return match
 
     async def _request(self, frame: bytes) -> Optional[bytes]:
         return await self._transact(frame)

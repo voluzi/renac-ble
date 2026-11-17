@@ -198,6 +198,9 @@ class RenacBLE:
         if not self._reassemble:
             self._clear_rx()
 
+    def _matches(self, request: bytes, frame: bytes) -> str | None:
+        return response_matches(request, frame)
+
     def _route_events(self, events: list[Frame | BadCrc | Garbage]) -> None:
         pending = self._pending
         if pending is None or pending.future.done():
@@ -205,7 +208,7 @@ class RenacBLE:
         for event in events:
             data = event.data
             if isinstance(event, Frame):
-                if response_matches(pending.request, data):
+                if self._matches(pending.request, data):
                     pending.future.set_result(data)
                     self._clear_rx()
                     return
@@ -215,7 +218,7 @@ class RenacBLE:
                            self.address, pending.label, data.hex(" "))
             elif isinstance(event, BadCrc):
                 self.stats.crc_errors += 1
-                if response_matches(pending.request, data):
+                if self._matches(pending.request, data):
                     pending.corrupt = True
                     logger.warning("%s %s: corrupt response (CRC mismatch, %d bytes): %s",
                                    self.address, pending.label, len(data), data.hex(" "))
@@ -244,7 +247,7 @@ class RenacBLE:
         logger.warning("%s %s: incomplete response after %.1fs: got %d of %s bytes: %s",
                        self.address, pending.label, self.fragment_timeout,
                        len(data), frame_length(data), data.hex(" "))
-        if response_matches(pending.request, data):
+        if self._matches(pending.request, data):
             self._fail_pending(_BadResponse("incomplete"))
             self._clear_rx()
         else:

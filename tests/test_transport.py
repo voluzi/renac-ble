@@ -8,6 +8,7 @@ from renac_ble import ble
 from renac_ble.inverter import RenacInverterBLE
 from renac_ble.inverter_registers import MIN_SOC, TOTAL_ENERGY_BLOCK, EPS_POWER_BLOCK
 from renac_ble.modbus import build_write_request, crc16
+from renac_ble.wallbox import WALLBOX_PREFIX, CHARGER_COMMAND_ADDRESS, RenacWallboxBLE
 
 
 def reply(value=20, count=1):
@@ -60,11 +61,11 @@ class FakeBleakClient:
 
 @pytest.fixture
 def make_device(monkeypatch):
-    async def make(scripts):
+    async def make(scripts, device_class=RenacInverterBLE):
         monkeypatch.setattr(ble, 'BleakClient', lambda address, disconnected_callback: FakeBleakClient(
             address, disconnected_callback, scripts,
         ))
-        dev = RenacInverterBLE('test-address')
+        dev = device_class('test-address')
         dev.request_timeout = 0.2
         dev.fragment_timeout = 0.05
         dev.settle_delay = 0.05
@@ -294,4 +295,28 @@ def test_bad_crc_on_nonmatching_candidate_does_not_fail_request(make_device):
         assert await dev.get_min_soc() == 42
         assert dev.stats.crc_errors == 1
         assert dev.stats.requests == 1
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(('command', 'stale'), [('start_charging', 2), ('stop_charging', 1)])
+def test_wallbox_ignores_opposite_command_echo(make_device, command, stale):
+    async def scenario():
+        value = 1 if command == 'start_charging' else 2
+        opposite = WALLBOX_PREFIX + build_write_request(CHARGER_COMMAND_ADDRESS, stale)
+        expected = WALLBOX_PREFIX + build_write_request(CHARGER_COMMAND_ADDRESS, value)
+        dev = await make_device([[(0, opposite), (0.05, expected)]], RenacWallboxBLE)
+        assert await getattr(dev, command)() is True
+        assert dev.client.writes == [expected]
+        assert dev.stats.unexpected_frames == 1
+    asyncio.run(scenario())
+
+
+def test_wallbox_command_exception_settles_request(make_device):
+    async def scenario():
+        exception = WALLBOX_PREFIX + crc16(b'\x01\x86\x03')
+        dev = await make_device([[(0, exception)]], RenacWallboxBLE)
+        assert await dev.stop_charging() is False
+        assert len(dev.client.writes) == 1
+        assert dev.stats.exceptions == 1
+        assert dev.stats.timeouts == 0
     asyncio.run(scenario())
