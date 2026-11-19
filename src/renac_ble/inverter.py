@@ -102,6 +102,11 @@ class RenacInverterBLE(RenacBLE):
         super().__init__(address, notification_callback, write_uuid, notify_uuid)
         self._telemetry_failures: dict[int, tuple[int, float | None]] = {}
 
+    async def connect(self) -> None:
+        """Connect and give previously backed-off telemetry blocks a fresh start."""
+        await super().connect()
+        self._telemetry_failures.clear()
+
     async def _read_telemetry_block(self, block: RegisterBlock) -> dict | None:
         address = block["address"]
         failures, retry_at = self._telemetry_failures.get(address, (0, None))

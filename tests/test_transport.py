@@ -301,7 +301,7 @@ def test_failed_telemetry_block_retries_at_diagnostics_interval_until_success(ma
         normal = [(0, words(0, 0, 0, 0, 0, 0, 0, 2, 1, 1))]
         dev = await make_device([unavailable] * 4 + [normal, unavailable, normal])
         now = 0.0
-        monkeypatch.setattr(inverter, 'monotonic', lambda: now, raising=False)
+        monkeypatch.setattr(inverter, 'monotonic', lambda: now)
         for now in (0, 1, 2, 3, 31.9, 32, 61.9):
             assert await dev.get_inverter_status() is None
         assert dev.client.writes == [build_read_request(11050, 10)] * 4
