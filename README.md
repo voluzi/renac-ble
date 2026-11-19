@@ -57,6 +57,22 @@ async def main():
 asyncio.run(main())
 ```
 
+### N3 HV inverter telemetry and bypass relay
+
+- `get_power_and_energy_overview()` includes battery and BMS electrical readings,
+  BMS temperature and state of health, inverter AC phase currents and powers,
+  and EPS phase voltages, currents, powers and frequency. The inverter AC and
+  EPS power totals are calculated from the three phase powers.
+- `get_inverter_status()` returns the inverter state label and boolean charge,
+  discharge and connection flags. `fault_active` is true only in `Fault` or
+  `Permanent`.
+- `get_inverter_diagnostics()` returns inverter temperatures, BMS cell
+  measurements and indexes, basic status, cycle count, and the 16 unsigned
+  `fault_words` in register order. Poll this less often than the overview.
+- `get_bypass_relay_enabled()` and `set_bypass_relay_enabled(bool)` read and
+  write the bypass relay setting. The write is confirmed using the Modbus
+  echo or a readback.
+
 ---
 
 ## 📚 Related
