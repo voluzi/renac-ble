@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Literal, Union
+from typing import Literal
 
 from renac_ble.register import RegisterBlock
 
@@ -97,15 +97,18 @@ def build_write_multiple_request(address: int, data: bytes) -> bytes:
 Fmt =Literal["ascii", "uint16", "int16", "uint32", "int32", "custom"]
 
 
-def parse_value(data: bytes, fmt: Fmt, scale: float = 1.0) -> Union[str, float, bytes]:
+def parse_value(
+    data: bytes, fmt: Fmt, scale: float = 1.0, *, precision: int | None = None,
+) -> str | float | bytes:
     """Parse ``data`` according to ``fmt`` and scaling factor."""
 
     if fmt == "ascii":
         return data.decode("ascii", errors="ignore").strip("\x00 ")
-    elif fmt in ("uint16", "uint32"):
-        return int(int.from_bytes(data, byteorder="big", signed=False) * scale)
-    elif fmt in ("int16", "int32"):
-        return int(int.from_bytes(data, byteorder="big", signed=True) * scale)
+    elif fmt in ("uint16", "uint32", "int16", "int32"):
+        value = int.from_bytes(data, byteorder="big", signed=fmt.startswith("int")) * scale
+        if precision is not None and scale % 1:
+            return round(value, precision)
+        return int(value)
     elif fmt == "custom":
         return data  # leave for manual handling
     else:
@@ -127,7 +130,9 @@ def parse_block_response(data: bytes, block: RegisterBlock) -> dict:
     result = {}
     for field in block["fields"]:
         raw = data[field["offset"] : field["offset"] + field["length"]]
-        result[field["name"]] = parse_value(raw, field["fmt"], field["scale"])
+        result[field["name"]] = parse_value(
+            raw, field["fmt"], field["scale"], precision=block.get("precision"),
+        )
     return result
 
 

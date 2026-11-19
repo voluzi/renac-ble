@@ -1,6 +1,8 @@
 """Register definitions for RENAC inverters."""
 
-from renac_ble.register import Register, RegisterBlock
+from typing import Literal
+
+from renac_ble.register import Register, RegisterBlock, RegisterField
 
 # https://www.photovoltaikforum.com/core/file-download/380139/
 
@@ -71,6 +73,100 @@ PV_INPUT_BLOCK: RegisterBlock = {
     ],
 }
 
+
+def _telemetry_block(
+    address: int,
+    *fields: tuple[str, Literal["int16", "uint16"], float, str] | None,
+) -> RegisterBlock:
+    decoded: list[RegisterField] = []
+    for index, field in enumerate(fields):
+        if field is not None:
+            name, fmt, scale, unit = field
+            decoded.append(
+                {"name": name, "offset": 2 * index, "length": 2, "fmt": fmt, "scale": scale, "unit": unit}
+            )
+    return {"address": address, "count": len(fields), "fields": decoded, "precision": 3}
+
+
+TEMPERATURE_BLOCK = _telemetry_block(
+    11016,
+    ("internal_temp", "int16", 0.1, "°C"),
+    ("charger_temp", "int16", 0.1, "°C"),
+    ("boost_temp", "int16", 0.1, "°C"),
+    ("inverter_temp", "int16", 0.1, "°C"),
+)
+
+BATTERY_BLOCK = _telemetry_block(
+    11020,
+    ("battery_voltage", "int16", 0.1, "V"),
+    ("battery_current", "int16", 0.1, "A"),
+    ("battery_power", "int16", 1, "W"),
+    ("bms_voltage", "int16", 0.1, "V"),
+    ("bms_current", "int16", 0.1, "A"),
+    ("bms_temp", "int16", 0.1, "°C"),
+    ("battery_soc", "uint16", 1, "%"),
+    ("bms_soh", "uint16", 1, "%"),
+)
+
+BMS_CELL_BLOCK = _telemetry_block(
+    11030,
+    ("bms_max_charge_a", "int16", 0.1, "A"),
+    ("bms_max_discharge_a", "int16", 0.1, "A"),
+    ("max_cell_v", "int16", 0.001, "V"),
+    ("min_cell_v", "int16", 0.001, "V"),
+    ("max_cell_v_no", "uint16", 1, ""),
+    ("min_cell_v_no", "uint16", 1, ""),
+    ("max_cell_t", "int16", 0.1, "°C"),
+    ("min_cell_t", "int16", 0.1, "°C"),
+    ("max_cell_t_no", "uint16", 1, ""),
+    ("min_cell_t_no", "uint16", 1, ""),
+    ("bms_basic_status", "uint16", 1, ""),
+    ("bms_cycles", "uint16", 1, ""),
+)
+
+INVERTER_STATUS_BLOCK = _telemetry_block(
+    11050,
+    ("forbid_charge", "uint16", 1, ""),
+    ("forbid_discharge", "uint16", 1, ""),
+    None, None, None, None, None,
+    ("inverter_state", "uint16", 1, ""),
+    ("bms_connected", "uint16", 1, ""),
+    ("meter1_connected", "uint16", 1, ""),
+)
+
+FAULT_WORD_BLOCK = _telemetry_block(
+    11060, *((f"fault_{index}", "uint16", 1, "") for index in range(1, 17)),
+)
+
+INVERTER_AC_EPS_BLOCK = _telemetry_block(
+    11079,
+    ("inv_r_current", "int16", 0.1, "A"),
+    ("inv_s_current", "int16", 0.1, "A"),
+    ("inv_t_current", "int16", 0.1, "A"),
+    ("inv_r_power", "int16", 1, "W"),
+    ("inv_s_power", "int16", 1, "W"),
+    ("inv_t_power", "int16", 1, "W"),
+    None, None, None,
+    ("eps_r_voltage", "uint16", 0.1, "V"),
+    ("eps_s_voltage", "uint16", 0.1, "V"),
+    ("eps_t_voltage", "uint16", 0.1, "V"),
+    ("eps_r_current", "int16", 0.1, "A"),
+    ("eps_s_current", "int16", 0.1, "A"),
+    ("eps_t_current", "int16", 0.1, "A"),
+    ("eps_r_power", "int16", 1, "W"),
+    ("eps_s_power", "int16", 1, "W"),
+    ("eps_t_power", "int16", 1, "W"),
+    ("eps_frequency", "uint16", 0.01, "Hz"),
+)
+
+BYPASS_RELAY_ENABLED: Register = {
+    "address": 20109,
+    "count": 1,
+    "fmt": "uint16",
+    "scale": 1,
+    "unit": "",
+}
+
 TOTAL_ENERGY_BLOCK: RegisterBlock = {
     "address": 14000,
     "count": 27,
@@ -97,37 +193,6 @@ TOTAL_ENERGY_BLOCK: RegisterBlock = {
         {"name": "eps_total_energy", "offset": 48, "length": 4, "fmt": "uint32", "scale": 0.1, "unit": "kWh"},
         {"name": "eps_today_energy", "offset": 52, "length": 2, "fmt": "uint16", "scale": 0.1, "unit": "kWh"},
     ],
-}
-
-EPS_POWER_BLOCK: RegisterBlock = {
-    "address": 11094,
-    "count": 3,  # 1 register per phase
-    "fields": [
-        {
-            "name": "eps_r_power",
-            "offset": 0,
-            "length": 2,
-            "fmt": "int16",
-            "scale": 1,
-            "unit": "W"
-        },
-        {
-            "name": "eps_s_power",
-            "offset": 2,
-            "length": 2,
-            "fmt": "int16",
-            "scale": 1,
-            "unit": "W"
-        },
-        {
-            "name": "eps_t_power",
-            "offset": 4,
-            "length": 2,
-            "fmt": "int16",
-            "scale": 1,
-            "unit": "W"
-        },
-    ]
 }
 
 METER1_POWER_BLOCK: RegisterBlock = {
@@ -181,22 +246,6 @@ PV1_TOTAL_ENERGY: Register = {
     "fmt": "uint32",
     "scale": 0.1,
     "unit": "kWh",
-}
-
-BATTERY_POWER: Register = {
-    "address": 11022,
-    "count": 1,
-    "fmt": "int16",
-    "scale": 1,
-    "unit": "W",
-}
-
-BATTERY_SOC: Register = {
-    "address": 11026,
-    "count": 1,
-    "fmt": "uint16",
-    "scale": 1,
-    "unit": "%",
 }
 
 BATTERY_TOTAL_CHARGE_ENERGY: Register = {

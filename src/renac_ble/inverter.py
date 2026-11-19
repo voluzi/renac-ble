@@ -1,22 +1,51 @@
 """High level API for RENAC inverters."""
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
+from time import monotonic
 
-from renac_ble.ble import RenacBLE
 from renac_ble import inverter_registers
-from renac_ble.inverter_registers import *
+from renac_ble.ble import NOTIFY_UUID, WRITE_UUID, RenacBLE
+from renac_ble.inverter_registers import (
+    BACKUP_CHARGE_END_HOUR,
+    BACKUP_CHARGE_END_MINUTE,
+    BACKUP_CHARGE_START_HOUR,
+    BACKUP_CHARGE_START_MINUTE,
+    BACKUP_GRID_CHARGE_FLAG,
+    BATTERY_BLOCK,
+    BMS_CELL_BLOCK,
+    BYPASS_RELAY_ENABLED,
+    EXPORT_LIMIT,
+    FAULT_WORD_BLOCK,
+    INVERTER_AC_EPS_BLOCK,
+    INVERTER_BASIC_INFO,
+    INVERTER_STATUS_BLOCK,
+    LOAD_POWER,
+    MAXIMUM_CHARGE_CURRENT,
+    MAXIMUM_DISCHARGE_CURRENT,
+    MIN_SOC,
+    MIN_SOC_ON_GRID,
+    P1_CHARGE_END_HOUR,
+    P1_CHARGE_END_MINUTE,
+    P1_CHARGE_START_HOUR,
+    P1_CHARGE_START_MINUTE,
+    P1_GRID_CHARGE_FLAG,
+    P2_CHARGE_END_HOUR,
+    P2_CHARGE_END_MINUTE,
+    P2_CHARGE_START_HOUR,
+    P2_CHARGE_START_MINUTE,
+    P2_GRID_CHARGE_FLAG,
+    POWER_LIMIT_PERCENT,
+    PV_INPUT_BLOCK,
+    TEMPERATURE_BLOCK,
+    TOTAL_ENERGY_BLOCK,
+    WORK_MODE,
+)
+from renac_ble.register import RegisterBlock
 
 logger = logging.getLogger(__name__)
-
-OVERVIEW_REGISTERS = {
-    "load_power": LOAD_POWER,
-    "pv_power": PV1_POWER,
-    "battery_power": BATTERY_POWER,
-    "battery_soc": BATTERY_SOC,
-}
-
 
 _REGISTER_NAMES = {
     (register["address"], register["count"]): name
@@ -30,6 +59,20 @@ class WorkMode(IntEnum):
     FORCE_TIME_USE = 1
     BACKUP = 2
     FEED_IN_FIRST = 3
+
+
+class InverterState(IntEnum):
+    Wait = 0
+    Check = 1
+    Normal = 2
+    Standby = 3
+    Fault = 4
+    Permanent = 5
+    Update = 6
+    EpsCheck = 7
+    Eps = 8
+    SelfTest = 9
+    Idle = 10
 
 
 @dataclass
@@ -47,6 +90,36 @@ class RenacInverterBLE(RenacBLE):
     """Client for interacting with RENAC hybrid inverters."""
 
     _register_names = _REGISTER_NAMES
+    telemetry_retry_interval_s = 30.0
+
+    def __init__(
+        self,
+        address: str,
+        notification_callback: Callable[[bytes], None] | None = None,
+        write_uuid: str = WRITE_UUID,
+        notify_uuid: str = NOTIFY_UUID,
+    ) -> None:
+        super().__init__(address, notification_callback, write_uuid, notify_uuid)
+        self._telemetry_failures: dict[int, tuple[int, float | None]] = {}
+
+    async def connect(self) -> None:
+        """Connect and give previously backed-off telemetry blocks a fresh start."""
+        await super().connect()
+        self._telemetry_failures.clear()
+
+    async def _read_telemetry_block(self, block: RegisterBlock) -> dict | None:
+        address = block["address"]
+        failures, retry_at = self._telemetry_failures.get(address, (0, None))
+        if retry_at is not None and monotonic() < retry_at:
+            return None
+        result = await self.read_named_register_block(block)
+        if result is not None:
+            self._telemetry_failures.pop(address, None)
+        else:
+            failures = min(failures + 1, 3)
+            retry_at = monotonic() + self.telemetry_retry_interval_s if failures == 3 else None
+            self._telemetry_failures[address] = (failures, retry_at)
+        return result
 
     async def get_info(self) -> dict | None:
         """Return basic information about the inverter."""
@@ -57,21 +130,63 @@ class RenacInverterBLE(RenacBLE):
         """Collect an overview of current power and energy values."""
 
         result = {}
-        energy = await self.read_named_register_block(TOTAL_ENERGY_BLOCK)
+        energy = await self._read_telemetry_block(TOTAL_ENERGY_BLOCK)
         if energy is not None:
             result.update(energy)
-        for name, register in OVERVIEW_REGISTERS.items():
-            value = await self.read_named_register(register)
-            if value is not None:
-                result[name] = value
-        eps_data = await self.read_named_register_block(EPS_POWER_BLOCK)
-        if eps_data is not None:
-            result["eps_power"] = (
-                eps_data["eps_r_power"]
-                + eps_data["eps_s_power"]
-                + eps_data["eps_t_power"]
-            )
+        load_power = await self.read_named_register(LOAD_POWER)
+        if load_power is not None:
+            result["load_power"] = load_power
+        pv = await self._read_telemetry_block(PV_INPUT_BLOCK)
+        if pv is not None:
+            result["pv_power"] = pv["pv1_power"]
+        battery = await self._read_telemetry_block(BATTERY_BLOCK)
+        if battery is not None:
+            result.update(battery)
+        phases = await self._read_telemetry_block(INVERTER_AC_EPS_BLOCK)
+        if phases is not None:
+            result.update(phases)
+            for prefix, total in (("inv", "inv_ac_power"), ("eps", "eps_power")):
+                result[total] = sum(phases[f"{prefix}_{phase}_power"] for phase in "rst")
         return result or None
+
+    async def get_inverter_status(self) -> dict | None:
+        """Return the operating state and charge, discharge and link flags."""
+        status = await self._read_telemetry_block(INVERTER_STATUS_BLOCK)
+        if status is None:
+            return None
+        code = status.pop("inverter_state")
+        result = {key: bool(value) for key, value in status.items()}
+        try:
+            state = InverterState(code)
+        except ValueError:
+            logger.warning("%s: unknown inverter state code %d", self.address, code)
+            state = None
+        return {
+            **result,
+            "inverter_state": state.name if state is not None else "Unknown",
+            "fault_active": state in (InverterState.Fault, InverterState.Permanent),
+        }
+
+    async def get_inverter_diagnostics(self) -> dict | None:
+        """Return temperatures, cell data and the 16 raw fault words in register order."""
+        result = {}
+        for block in (TEMPERATURE_BLOCK, BMS_CELL_BLOCK):
+            readings = await self._read_telemetry_block(block)
+            if readings is not None:
+                result.update(readings)
+        faults = await self._read_telemetry_block(FAULT_WORD_BLOCK)
+        if faults is not None:
+            result["fault_words"] = tuple(faults[f"fault_{index}"] for index in range(1, 17))
+        return result or None
+
+    async def get_bypass_relay_enabled(self) -> bool | None:
+        value = await self.read_named_register(BYPASS_RELAY_ENABLED)
+        return bool(value) if value in (0, 1) else None
+
+    async def set_bypass_relay_enabled(self, enabled: bool) -> bool | None:
+        if not isinstance(enabled, bool):
+            return False
+        return await self.write_named_register(BYPASS_RELAY_ENABLED, int(enabled))
 
     async def get_work_mode(self) -> WorkMode | None:
         value = await self.read_named_register(WORK_MODE)

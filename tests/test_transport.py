@@ -1,18 +1,27 @@
 import asyncio
+import struct
 import time
 
 import pytest
 from bleak.exc import BleakError
 
 from renac_ble import ble
+from renac_ble import inverter
 from renac_ble.inverter import RenacInverterBLE
-from renac_ble.inverter_registers import MIN_SOC, TOTAL_ENERGY_BLOCK, EPS_POWER_BLOCK
-from renac_ble.modbus import build_write_multiple_request, build_write_request, crc16
+from renac_ble.inverter_registers import MIN_SOC
+from renac_ble.modbus import (
+    build_read_request, build_write_multiple_request, build_write_request, crc16,
+)
 from renac_ble.wallbox import WALLBOX_PREFIX, CHARGER_COMMAND_ADDRESS, RenacWallboxBLE
 
 
 def reply(value=20, count=1):
     return crc16(bytes([1, 3, count * 2]) + value.to_bytes(count * 2, 'big'))
+
+
+def words(*values):
+    payload = struct.pack(f'>{len(values)}H', *(value & 0xffff for value in values))
+    return crc16(bytes([1, 3, len(payload)]) + payload)
 
 
 class FakeBleakClient:
@@ -185,25 +194,142 @@ def test_timeout_returns_none_after_read_attempts(make_device, caplog):
     asyncio.run(scenario())
 
 
-def test_overview_with_missing_block_returns_partial(make_device):
+def test_fast_inverter_poll_decodes_telemetry_with_distinct_reply_sizes(make_device):
     async def scenario():
-        dev = await make_device([[], [(0, reply(42))], [(0, reply(3))],
-                                 [(0, reply(4))], [(0, reply(80))],
-                                 [(0, reply(1, EPS_POWER_BLOCK['count']))]])
-        dev.read_attempts = 1
+        dev = await make_device([
+            [(0, reply(0, 27))], [(0, reply(42))], [(0, words(0, 0, 3, 0, 0, 0))],
+            [(0, words(4001, -23, 4, 4012, -37, -54, 80, 97))],
+            [(0, words(-71, 82, -93, -200, 500, 13, 5001, 5002, 5003,
+                       2301, 2312, 2323, -14, 20, -21, -3, 9, -5, 4999))],
+            [(0, words(0, 0, 0, 0, 0, 0, 0, 2, 0, 0))],
+        ])
+        result = await dev.get_power_and_energy_overview()
+        status = await dev.get_inverter_status()
+        assert result['load_power'] == 42
+        assert result['pv_power'] == 3
+        assert result['battery_soc'] == 80
+        assert result['battery_power'] == 4
+        assert result['eps_power'] == 1
+        assert status['inverter_state'] == 'Normal'
+        expected = {
+            'battery_voltage': 400.1, 'battery_current': -2.3, 'bms_voltage': 401.2,
+            'bms_current': -3.7, 'bms_temp': -5.4, 'bms_soh': 97, 'inv_r_current': -7.1,
+            'inv_s_current': 8.2, 'inv_t_current': -9.3, 'inv_r_power': -200, 'inv_s_power': 500,
+            'inv_t_power': 13, 'inv_ac_power': 313, 'eps_r_voltage': 230.1, 'eps_s_voltage': 231.2,
+            'eps_t_voltage': 232.3, 'eps_r_current': -1.4, 'eps_s_current': 2, 'eps_t_current': -2.1,
+            'eps_r_power': -3, 'eps_s_power': 9, 'eps_t_power': -5, 'eps_frequency': 49.99,
+        }
+        assert expected.items() <= result.items()
+        assert None not in result.values()
+        assert dev.client.writes == [
+            build_read_request(address, count)
+            for address, count in [(14000, 27), (11113, 1), (11000, 6), (11020, 8), (11079, 19), (11050, 10)]
+        ]
+        byte_counts = [2 * int.from_bytes(frame[4:6], 'big') for frame in dev.client.writes]
+        assert len(byte_counts) == len(set(byte_counts)) == 6
+    asyncio.run(scenario())
+
+
+def test_overview_with_missing_battery_block_keeps_other_live_readings(make_device):
+    async def scenario():
+        dev = await make_device([
+            [(0, reply(0, 27))], [(0, reply(42))], [(0, words(0, 0, 3, 0, 0, 0))],
+            [(0, crc16(b'\x01\x83\x02'))],
+            [(0, words(*([0] * 17), 9, 4999))],
+        ])
         result = await dev.get_power_and_energy_overview()
         assert result['load_power'] == 42
-        assert result['battery_soc'] == 80
-        assert result['eps_power'] == 1
-        assert all(field['name'] not in result for field in TOTAL_ENERGY_BLOCK['fields'])
-        assert None not in result.values()
+        assert result['pv_power'] == 3
+        assert result['eps_power'] == 9
+        assert result['battery_total_charge_energy'] == 0
+        assert {'battery_power', 'battery_soc', 'battery_voltage', 'battery_current'}.isdisjoint(result)
+        assert not any(key.startswith('bms_') for key in result)
     asyncio.run(scenario())
 
 
 def test_overview_all_reads_failed_returns_none(make_device):
     async def scenario():
-        dev = await make_device([[(0, crc16(b'\x01\x83\x02'))]] * 6)
+        dev = await make_device([[(0, crc16(b'\x01\x83\x02'))]] * 5)
         assert await dev.get_power_and_energy_overview() is None
+    asyncio.run(scenario())
+
+
+def test_inverter_diagnostics_decode_temperatures_cells_and_fault_words(make_device):
+    async def scenario():
+        dev = await make_device([
+            [(0, words(-123, 234, -17, 459))],
+            [(0, words(-155, 237, 3421, 3128, 7, 8, 527, -89, 10, 11, 0x8000, 402))],
+            [(0, words(0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0x8001))],
+        ])
+        result = await dev.get_inverter_diagnostics()
+        assert result == {
+            'internal_temp': -12.3, 'charger_temp': 23.4, 'boost_temp': -1.7, 'inverter_temp': 45.9,
+            'bms_max_charge_a': -15.5, 'bms_max_discharge_a': 23.7, 'max_cell_v': 3.421,
+            'min_cell_v': 3.128, 'max_cell_v_no': 7, 'min_cell_v_no': 8, 'max_cell_t': 52.7,
+            'min_cell_t': -8.9, 'max_cell_t_no': 10, 'min_cell_t_no': 11,
+            'bms_basic_status': 0x8000, 'bms_cycles': 402,
+            'fault_words': (0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0x8001),
+        }
+        assert dev.client.writes == [
+            build_read_request(11016, 4), build_read_request(11030, 12), build_read_request(11060, 16),
+        ]
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(('code', 'label'), list(enumerate((
+    'Wait', 'Check', 'Normal', 'Standby', 'Fault', 'Permanent',
+    'Update', 'EpsCheck', 'Eps', 'SelfTest', 'Idle', 'Unknown',
+))))
+def test_inverter_operating_state_and_fault_active(make_device, caplog, code, label):
+    async def scenario():
+        dev = await make_device([[(0, words(1, 0, 96, 4, 24, 300, 50, code, 1, 0))]])
+        result = await dev.get_inverter_status()
+        assert result == {
+            'forbid_charge': True, 'forbid_discharge': False, 'bms_connected': True,
+            'meter1_connected': False,
+            'inverter_state': label, 'fault_active': code in (4, 5),
+        }
+        assert dev.client.writes == [build_read_request(11050, 10)]
+        if label == 'Unknown':
+            assert f'unknown inverter state code {code}' in caplog.text
+    asyncio.run(scenario())
+
+
+def test_failed_telemetry_block_retries_at_diagnostics_interval_until_success(make_device, monkeypatch):
+    async def scenario():
+        unavailable = [(0, crc16(b'\x01\x83\x02'))]
+        normal = [(0, words(0, 0, 0, 0, 0, 0, 0, 2, 1, 1))]
+        dev = await make_device([unavailable] * 4 + [normal, unavailable, normal])
+        now = 0.0
+        monkeypatch.setattr(inverter, 'monotonic', lambda: now)
+        for now in (0, 1, 2, 3, 31.9, 32, 61.9):
+            assert await dev.get_inverter_status() is None
+        assert dev.client.writes == [build_read_request(11050, 10)] * 4
+        now = 62
+        assert (await dev.get_inverter_status())['inverter_state'] == 'Normal'
+        now = 63
+        assert await dev.get_inverter_status() is None
+        now = 64
+        assert (await dev.get_inverter_status())['inverter_state'] == 'Normal'
+        assert dev.client.writes == [build_read_request(11050, 10)] * 7
+    asyncio.run(scenario())
+
+
+def test_bypass_relay_uses_single_register_read_and_verified_write(make_device):
+    async def scenario():
+        dev = await make_device([
+            [(0, reply(0))], [(0, build_write_request(20109, 1))],
+            [(0, reply(1))], [], [(0, reply(1))],
+        ])
+        assert await dev.get_bypass_relay_enabled() is False
+        assert await dev.set_bypass_relay_enabled(True) is True
+        assert await dev.get_bypass_relay_enabled() is True
+        assert await dev.set_bypass_relay_enabled(False) is False
+        assert dev.client.writes == [
+            build_read_request(20109, 1), build_write_request(20109, 1),
+            build_read_request(20109, 1), build_write_request(20109, 0),
+            build_read_request(20109, 1),
+        ]
     asyncio.run(scenario())
 
 
