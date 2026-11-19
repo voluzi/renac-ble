@@ -65,13 +65,17 @@ asyncio.run(main())
   EPS power totals are calculated from the three phase powers.
 - `get_inverter_status()` returns the inverter state label and boolean charge,
   discharge and connection flags. `fault_active` is true only in `Fault` or
-  `Permanent`.
+  `Permanent`. Unrecognized state codes are logged and returned as `Unknown`.
 - `get_inverter_diagnostics()` returns inverter temperatures, BMS cell
   measurements and indexes, basic status, cycle count, and the 16 unsigned
   `fault_words` in register order. Poll this less often than the overview.
 - `get_bypass_relay_enabled()` and `set_bypass_relay_enabled(bool)` read and
   write the bypass relay setting. The write is confirmed using the Modbus
   echo or a readback.
+
+After three consecutive failures, a polling block is retried at most once
+every 30 seconds until it succeeds. Set `telemetry_retry_interval_s` on the
+client to match a different diagnostics interval.
 
 ---
 

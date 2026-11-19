@@ -138,7 +138,7 @@ FAULT_WORD_BLOCK = _telemetry_block(
     11060, *((f"fault_{index}", "uint16", 1, "") for index in range(1, 17)),
 )
 
-INVERTER_AC_BLOCK = _telemetry_block(
+INVERTER_AC_EPS_BLOCK = _telemetry_block(
     11079,
     ("inv_r_current", "int16", 0.1, "A"),
     ("inv_s_current", "int16", 0.1, "A"),
@@ -146,10 +146,7 @@ INVERTER_AC_BLOCK = _telemetry_block(
     ("inv_r_power", "int16", 1, "W"),
     ("inv_s_power", "int16", 1, "W"),
     ("inv_t_power", "int16", 1, "W"),
-)
-
-EPS_BLOCK = _telemetry_block(
-    11088,
+    None, None, None,
     ("eps_r_voltage", "uint16", 0.1, "V"),
     ("eps_s_voltage", "uint16", 0.1, "V"),
     ("eps_t_voltage", "uint16", 0.1, "V"),
@@ -196,37 +193,6 @@ TOTAL_ENERGY_BLOCK: RegisterBlock = {
         {"name": "eps_total_energy", "offset": 48, "length": 4, "fmt": "uint32", "scale": 0.1, "unit": "kWh"},
         {"name": "eps_today_energy", "offset": 52, "length": 2, "fmt": "uint16", "scale": 0.1, "unit": "kWh"},
     ],
-}
-
-EPS_POWER_BLOCK: RegisterBlock = {
-    "address": 11094,
-    "count": 3,  # 1 register per phase
-    "fields": [
-        {
-            "name": "eps_r_power",
-            "offset": 0,
-            "length": 2,
-            "fmt": "int16",
-            "scale": 1,
-            "unit": "W"
-        },
-        {
-            "name": "eps_s_power",
-            "offset": 2,
-            "length": 2,
-            "fmt": "int16",
-            "scale": 1,
-            "unit": "W"
-        },
-        {
-            "name": "eps_t_power",
-            "offset": 4,
-            "length": 2,
-            "fmt": "int16",
-            "scale": 1,
-            "unit": "W"
-        },
-    ]
 }
 
 METER1_POWER_BLOCK: RegisterBlock = {
@@ -280,22 +246,6 @@ PV1_TOTAL_ENERGY: Register = {
     "fmt": "uint32",
     "scale": 0.1,
     "unit": "kWh",
-}
-
-BATTERY_POWER: Register = {
-    "address": 11022,
-    "count": 1,
-    "fmt": "int16",
-    "scale": 1,
-    "unit": "W",
-}
-
-BATTERY_SOC: Register = {
-    "address": 11026,
-    "count": 1,
-    "fmt": "uint16",
-    "scale": 1,
-    "unit": "%",
 }
 
 BATTERY_TOTAL_CHARGE_ENERGY: Register = {
