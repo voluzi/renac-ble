@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Fix swapped `load_*_energy` and `input_*_energy` fields. Per protocol V1.00,
+  registers 14018/14020 are input energy and 14021/14023 are load energy.
+
 ## 0.2.0
 
 - Add N3 HV battery, BMS, inverter temperature and status, fault word, inverter
